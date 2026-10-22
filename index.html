@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tilt Ball" />
+  <meta name="theme-color" content="#4fb8ff" />
+  <title>Tilt Ball</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="hud-col">
+      <div id="hud-level"></div>
+      <div id="hud-bananas"></div>
+    </div>
+    <div id="hud-time"></div>
+    <div class="hud-col right">
+      <div id="hud-lives"></div>
+    </div>
+  </div>
+  <button id="btn-pause" class="hidden" aria-label="Pause">❚❚</button>
+
+  <div id="center-msg" class="hidden"></div>
+
+  <div id="joy" class="hidden"><div id="joy-knob"></div></div>
+
+  <!-- Title -->
+  <div id="screen-title" class="screen">
+    <div class="panel">
+      <h1>Tilt <span>Ball</span></h1>
+      <p class="tag">Tilt your phone to roll the ball to the goal.</p>
+      <button id="btn-play" class="big-btn">Play</button>
+      <div class="sub-label">Levels</div>
+      <div id="level-grid"></div>
+      <div class="row">
+        <button id="btn-controls" class="small-btn">Controls: Tilt</button>
+        <button id="btn-tutorial" class="small-btn">How to play</button>
+      </div>
+      <p id="secure-warning" class="warn hidden">
+        Tilt controls need this page to be opened over <b>https://</b>. On a computer, use the arrow keys.
+      </p>
+    </div>
+  </div>
+
+  <!-- Onboarding 1: hold steady and level -->
+  <div id="screen-hold" class="screen hidden">
+    <div class="panel">
+      <h2>Get comfortable</h2>
+      <div class="phone-demo" aria-hidden="true">
+        <div class="phone"><div class="phone-screen"></div></div>
+      </div>
+      <p class="instr">
+        Hold the phone in <b>portrait</b> with both hands, screen facing up and tilted a little toward you —
+        like reading a message. Keep it <b>level</b> left-to-right and <b>hold still</b>.
+      </p>
+      <div id="bubble-level">
+        <div class="ring"></div>
+        <div id="bubble"></div>
+      </div>
+      <div id="hold-status">Waiting for the motion sensor…</div>
+      <div id="hold-progress"><div id="hold-progress-fill"></div></div>
+      <p class="hint">This position becomes "neutral": the ball stays still while you hold it like this.</p>
+      <div id="hold-nosensor" class="warn hidden">
+        No tilt data is arriving. Open the game from its <b>https://</b> link in Safari and allow motion access.
+        <button id="btn-use-touch" class="small-btn">Use touch controls instead</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboarding 2: practice tilting -->
+  <div id="screen-practice" class="screen hidden">
+    <div class="panel">
+      <h2>Try it out</h2>
+      <p id="practice-text" class="instr"></p>
+      <div id="arena">
+        <div id="ptarget"></div>
+        <div id="pdot"></div>
+      </div>
+      <div id="practice-step"></div>
+      <p class="hint">Small tilts are enough. Return to your neutral position to slow down.</p>
+      <button id="btn-skip-practice" class="small-btn">Skip</button>
+    </div>
+  </div>
+
+  <div id="screen-denied" class="screen hidden">
+    <div class="panel">
+      <h2>Motion access needed</h2>
+      <p class="instr">
+        The game needs permission to read your phone's tilt. Close Safari completely, open the game again,
+        and tap <b>Allow</b> when asked.
+      </p>
+      <button id="btn-denied-touch" class="big-btn">Play with touch controls</button>
+      <button id="btn-denied-back" class="small-btn">Back</button>
+    </div>
+  </div>
+
+  <div id="screen-pause" class="screen hidden">
+    <div class="panel">
+      <h2>Paused</h2>
+      <button id="btn-resume" class="big-btn">Resume</button>
+      <button id="btn-recal" class="small-btn wide">Recalibrate tilt</button>
+      <button id="btn-restart" class="small-btn wide">Restart level</button>
+      <button id="btn-quit" class="small-btn wide">Quit to title</button>
+    </div>
+  </div>
+
+  <div id="screen-gameover" class="screen hidden">
+    <div class="panel">
+      <h2>Game Over</h2>
+      <p id="gameover-level" class="instr"></p>
+      <button id="btn-retry" class="big-btn">Try again</button>
+      <button id="btn-gameover-title" class="small-btn">Title</button>
+    </div>
+  </div>
+
+  <div id="screen-complete" class="screen hidden">
+    <div class="panel">
+      <h2>All levels cleared! 🎉</h2>
+      <p id="complete-bananas" class="instr"></p>
+      <button id="btn-complete-title" class="big-btn">Back to title</button>
+    </div>
+  </div>
+
+  <div id="rotate-warning">
+    <div>📱 Please turn your phone back to <b>portrait</b>.</div>
+  </div>
+
+  <div id="error-box" class="hidden"></div>
+  <script>
+    (function () {
+      function report(msg) {
+        var box = document.getElementById('error-box');
+        box.textContent += msg + '\n';
+        box.classList.remove('hidden');
+      }
+      window.addEventListener('error', function (e) { report(e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')); });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        report('Promise: ' + (r && r.stack ? r.stack : r));
+      });
+    })();
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
