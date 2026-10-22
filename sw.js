@@ -1,5 +1,5 @@
 // Network-first so updates show up right away; falls back to the cache when offline.
-const CACHE = 'tilt-ball-v1';
+const CACHE = 'tilt-ball-v2';
 const FILES = [
   './',
   'index.html',

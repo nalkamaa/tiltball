@@ -20,7 +20,47 @@ export class TiltInput {
     this.ey = null;
     this.maxTilt = 20;
     this.deadZone = 1.2;
+    // How the phone is turned relative to an upright portrait view, in degrees:
+    // 0 upright, 90 top edge pointing left, -90 top edge pointing right, 180 upside down.
+    // `hold` is null while the phone lies too flat to tell.
+    this.hold = null;
+    this.lastHold = null;
+    // The hold the player's view is drawn for; read() reports tilt in that frame.
+    this.viewAngle = 0;
     window.addEventListener('deviceorientation', (e) => this.handle(e));
+  }
+
+  // Call once per frame.
+  trackHold() {
+    if (!this.hasData) {
+      this.hold = null;
+      return;
+    }
+    const [x, y] = this.up;
+    const mag = Math.hypot(x, y);
+    if (mag < Math.sin(12 * DEG)) {
+      this.hold = null;
+      return;
+    }
+    const deg = Math.atan2(x, y) / DEG;
+    const dist = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+    // Switch only on a clear signal, so a phone held fairly flat and tilted hard
+    // sideways during play is not mistaken for being turned.
+    const d = this.lastHold === null ? 180 : dist(deg, this.lastHold);
+    if (d > 80 || (d > 55 && mag > Math.sin(30 * DEG))) {
+      let q = Math.round(deg / 90) * 90;
+      if (q === -180) q = 180;
+      this.lastHold = q;
+    }
+    this.hold = this.lastHold;
+  }
+
+  // World-up expressed in the player's view frame for a given hold angle.
+  upInView(angle = this.viewAngle) {
+    if (!this.up) return null;
+    const [x, y, z] = this.up;
+    const c = Math.round(Math.cos(angle * DEG)), s = Math.round(Math.sin(angle * DEG));
+    return [x * c - y * s, x * s + y * c, z];
   }
 
   get hasData() {
@@ -69,7 +109,7 @@ export class TiltInput {
     return this.base !== null;
   }
 
-  // x > 0: right side lowered, y > 0: top edge lowered (away from you). Range -1..1.
+  // In the player's view: x > 0 right side lowered, y > 0 far edge lowered. Range -1..1.
   read() {
     if (!this.up || !this.base) return { x: 0, y: 0 };
     const shape = (v) => {
@@ -78,8 +118,11 @@ export class TiltInput {
       a = Math.max(0, Math.abs(a) - this.deadZone);
       return s * Math.min(1, a / (this.maxTilt - this.deadZone));
     };
-    let x = shape(-dot(this.up, this.ex));
-    let y = shape(-dot(this.up, this.ey));
+    const dx = shape(-dot(this.up, this.ex));
+    const dy = shape(-dot(this.up, this.ey));
+    const c = Math.round(Math.cos(this.viewAngle * DEG)), s = Math.round(Math.sin(this.viewAngle * DEG));
+    let x = dx * c - dy * s;
+    let y = dx * s + dy * c;
     const m = Math.hypot(x, y);
     if (m > 1) { x /= m; y /= m; }
     return { x, y };

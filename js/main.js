@@ -11,8 +11,9 @@ const START_LIVES = 3;
 const MAX_VIS_TILT = 10 * Math.PI / 180;
 const FALL_MARGIN = 10;
 const GOAL_R = 1.1;
-const CAM_DIST = 5.5;
-const CAM_HEIGHT = 2.7;
+const CAM_PORTRAIT = { fov: 72, dist: 5.5, height: 2.7 };
+const CAM_LANDSCAPE = { fov: 50, dist: 6.2, height: 3.1 };
+const HOLD_CHANGE_SECONDS = 0.7;
 
 const store = {
   get unlocked() { return Math.min(LEVELS.length, Math.max(1, +localStorage.getItem('tb_unlocked') || 1)); },
@@ -21,6 +22,8 @@ const store = {
   set practiced(v) { localStorage.setItem('tb_practiced', v ? '1' : '0'); },
   get touch() { return localStorage.getItem('tb_touch') === '1'; },
   set touch(v) { localStorage.setItem('tb_touch', v ? '1' : '0'); },
+  get view() { return localStorage.getItem('tb_view') === 'landscape' ? 'landscape' : 'portrait'; },
+  set view(v) { localStorage.setItem('tb_view', v); },
 };
 
 const THEMES = [
@@ -52,15 +55,65 @@ scene.add(pivot);
 let stageObjects = new THREE.Group();
 stage.add(stageObjects);
 
-function resize() {
-  const w = window.innerWidth, h = window.innerHeight;
+// ---------------------------------------------------------------- layout
+
+const root = $('root');
+const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
+// Extra CSS rotation of #root, for landscape view while the OS keeps the page in portrait.
+let viewRot = 0;
+let camCfg = CAM_PORTRAIT;
+let layoutKey = '';
+
+const pageIsLandscape = () => window.innerWidth > window.innerHeight;
+
+function readSafeArea() {
+  const cs = getComputedStyle($('safe-probe'));
+  return {
+    t: parseFloat(cs.paddingTop) || 0,
+    r: parseFloat(cs.paddingRight) || 0,
+    b: parseFloat(cs.paddingBottom) || 0,
+    l: parseFloat(cs.paddingLeft) || 0,
+  };
+}
+
+function applyLayout(force = false) {
+  const W = window.innerWidth, H = window.innerHeight;
+  const key = `${W}x${H}r${viewRot}`;
+  if (!force && key === layoutKey) return;
+  layoutKey = key;
+  const sideways = viewRot !== 0;
+  const w = sideways ? H : W, h = sideways ? W : H;
+  root.style.width = `${w}px`;
+  root.style.height = `${h}px`;
+  root.style.transform = `translate(-50%, -50%) rotate(${viewRot}deg)`;
+  root.classList.toggle('landscape', w > h);
+
+  // Map the page's safe-area insets into #root's rotated frame.
+  const s = readSafeArea();
+  const m = viewRot === 90 ? { t: s.r, r: s.b, b: s.l, l: s.t }
+    : viewRot === -90 ? { t: s.l, r: s.t, b: s.r, l: s.b }
+      : s;
+  for (const [k, v] of Object.entries(m)) root.style.setProperty(`--sa${k}`, `${v}px`);
+
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  camera.fov = camera.aspect < 1 ? 72 : 55;
+  camCfg = camera.aspect < 1 ? CAM_PORTRAIT : CAM_LANDSCAPE;
+  camera.fov = camCfg.fov;
   camera.updateProjectionMatrix();
 }
-window.addEventListener('resize', resize);
-resize();
+
+// Page coordinates -> #root coordinates (undoes the CSS rotation).
+function toRootCoords(px, py) {
+  const dx = px - window.innerWidth / 2, dy = py - window.innerHeight / 2;
+  const a = (-viewRot * Math.PI) / 180;
+  return {
+    x: dx * Math.cos(a) - dy * Math.sin(a) + root.clientWidth / 2,
+    y: dx * Math.sin(a) + dy * Math.cos(a) + root.clientHeight / 2,
+  };
+}
+
+window.addEventListener('resize', () => applyLayout());
+applyLayout(true);
 
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
@@ -336,7 +389,7 @@ function spawnConfetti(at) {
 // ---------------------------------------------------------------- game state
 
 const tilt = new TiltInput();
-const onboarding = new Onboarding(tilt, sfx);
+const onboarding = new Onboarding(tilt, sfx, () => store.view);
 
 let state = 'title';
 let levelIndex = 0;
@@ -397,8 +450,12 @@ function updateHud() {
   $('hud-lives').textContent = '♥'.repeat(Math.max(0, lives));
   const t = Math.max(0, timeLeft);
   const el = $('hud-time');
-  el.textContent = t.toFixed(t < 10 ? 1 : 0);
+  el.textContent = formatTime(t);
   el.classList.toggle('low', t < 10);
+}
+
+function formatTime(t) {
+  return t < 10 ? t.toFixed(1) : String(Math.ceil(t));
 }
 
 function startLevel(i) {
@@ -470,8 +527,10 @@ function runCalibration(then) {
   onboarding.startHold(then);
 }
 
-function pauseGame() {
+let lastPauseReason = '';
+function pauseGame(reason = 'button') {
   if (!['intro', 'play'].includes(state)) return;
+  lastPauseReason = reason;
   pausedFrom = state;
   state = 'paused';
   $('btn-recal').classList.toggle('hidden', touchMode);
@@ -508,6 +567,7 @@ function buildTitle() {
     grid.appendChild(b);
   });
   $('btn-controls').textContent = touchMode ? 'Controls: Touch' : 'Controls: Tilt';
+  $('btn-view').textContent = store.view === 'landscape' ? 'View: Landscape' : 'View: Portrait';
   $('secure-warning').classList.toggle('hidden', window.isSecureContext || touchMode);
 }
 
@@ -516,7 +576,7 @@ function buildTitle() {
 const keys = new Set();
 window.addEventListener('keydown', (e) => {
   keys.add(e.code);
-  if (e.code === 'Escape' || e.code === 'KeyP') state === 'paused' ? resumeGame() : pauseGame();
+  if (e.code === 'Escape' || e.code === 'KeyP') state === 'paused' ? resumeGame() : pauseGame('key');
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
@@ -524,20 +584,22 @@ const joy = { active: false, id: null, ox: 0, oy: 0, x: 0, y: 0 };
 const JOY_R = 60;
 canvas.addEventListener('pointerdown', (e) => {
   if (!touchMode || !['intro', 'play'].includes(state)) return;
+  const p = toRootCoords(e.clientX, e.clientY);
   joy.active = true;
   joy.id = e.pointerId;
-  joy.ox = e.clientX;
-  joy.oy = e.clientY;
+  joy.ox = p.x;
+  joy.oy = p.y;
   joy.x = joy.y = 0;
   const base = $('joy');
-  base.style.left = `${e.clientX}px`;
-  base.style.top = `${e.clientY}px`;
+  base.style.left = `${p.x}px`;
+  base.style.top = `${p.y}px`;
   base.classList.remove('hidden');
   $('joy-knob').style.transform = 'translate(-50%, -50%)';
 });
 canvas.addEventListener('pointermove', (e) => {
   if (!joy.active || e.pointerId !== joy.id) return;
-  let dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
+  const p = toRootCoords(e.clientX, e.clientY);
+  let dx = p.x - joy.ox, dy = p.y - joy.oy;
   const d = Math.hypot(dx, dy);
   if (d > JOY_R) { dx *= JOY_R / d; dy *= JOY_R / d; }
   joy.x = dx / JOY_R;
@@ -650,7 +712,11 @@ function updateCamera(dt, follow) {
   }
   const k = 1 - Math.exp(-dt * (state === 'intro' ? 2.5 : 7));
   if (state !== 'fall') {
-    const target = new THREE.Vector3(p.x + Math.sin(cam.yaw) * CAM_DIST, p.y + CAM_HEIGHT, p.z + Math.cos(cam.yaw) * CAM_DIST);
+    const target = new THREE.Vector3(
+      p.x + Math.sin(cam.yaw) * camCfg.dist,
+      p.y + camCfg.height,
+      p.z + Math.cos(cam.yaw) * camCfg.dist,
+    );
     cam.pos.lerp(target, k);
     const look = new THREE.Vector3(p.x - Math.sin(cam.yaw) * 2.5, p.y + 0.2, p.z - Math.cos(cam.yaw) * 2.5);
     cam.look.lerp(look, k);
@@ -700,8 +766,7 @@ function reachedGoal() {
 function onGoal() {
   state = 'goal';
   stateT = 0;
-  const bonus = Math.ceil(timeLeft);
-  showMsg('GOAL!', `${bonus}s left`, 0, 'big goal');
+  showMsg('GOAL!', `${formatTime(Math.max(0, timeLeft))}s left`, 0, 'big goal');
   sfx.goal();
   spawnConfetti(level.goal);
   store.unlocked = Math.max(store.unlocked, levelIndex + 2);
@@ -714,7 +779,41 @@ function onFail(title) {
   sfx.fall();
 }
 
+let holdChangeT = 0;
+
+function updateOrientation(dt) {
+  tilt.trackHold();
+  const landscapeView = store.view === 'landscape';
+  const inLevel = ['intro', 'play', 'goal', 'fall'].includes(state);
+
+  let rot = 0;
+  if (landscapeView && !touchMode && !pageIsLandscape()) {
+    if (inLevel) rot = tilt.viewAngle;
+    else if (tilt.hold === 90 || tilt.hold === -90) rot = tilt.hold;
+    else if (tilt.hold === null) rot = viewRot;
+  }
+  if (rot !== viewRot) {
+    viewRot = rot;
+    applyLayout(true);
+  }
+
+  const wrongWay = isTouchDevice && pageIsLandscape() && !landscapeView;
+  $('rotate-warning').classList.toggle('hidden', !wrongWay);
+  if (wrongWay) pauseGame('rotated');
+
+  // Turning the phone mid-level would flip the controls, so stop and recalibrate.
+  const turned = !touchMode && (state === 'intro' || state === 'play')
+    && tilt.hold !== null && tilt.hold !== tilt.viewAngle;
+  holdChangeT = turned ? holdChangeT + dt : 0;
+  if (holdChangeT > HOLD_CHANGE_SECONDS) {
+    holdChangeT = 0;
+    pauseGame('turned');
+    runCalibration(() => resumeGame());
+  }
+}
+
 function update(dt) {
+  updateOrientation(dt);
   stateT += dt;
   const raw = rawInput();
   const k = Math.min(1, dt * 14);
@@ -850,13 +949,17 @@ $('btn-retry').addEventListener('click', () => { lives = START_LIVES; retryLevel
 $('btn-gameover-title').addEventListener('click', toTitle);
 $('btn-complete-title').addEventListener('click', toTitle);
 
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) pauseGame();
+$('btn-view').addEventListener('click', () => {
+  store.view = store.view === 'landscape' ? 'portrait' : 'landscape';
+  buildTitle();
+});
+$('btn-rotate-landscape').addEventListener('click', () => {
+  store.view = 'landscape';
+  buildTitle();
 });
 
-const isLandscapePhone = () => window.matchMedia('(orientation: landscape) and (pointer: coarse)').matches;
-window.addEventListener('resize', () => {
-  if (isLandscapePhone()) pauseGame();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseGame('hidden');
 });
 
 let last = performance.now();
@@ -875,6 +978,10 @@ if (new URLSearchParams(location.search).has('debug')) {
     get ball() { return ball; },
     get world() { return world; },
     get camYaw() { return cam.yaw; },
+    get viewRot() { return viewRot; },
+    get lastPauseReason() { return lastPauseReason; },
+    tilt,
+    store,
     get timeLeft() { return timeLeft; },
     get lives() { return lives; },
     get bananas() { return bananaCount; },

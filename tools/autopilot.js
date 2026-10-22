@@ -1,11 +1,24 @@
 // Browser test harness: open index.html?debug, then in the console run
 //   const ap = await import('./tools/autopilot.js'); await ap.calibrate(); await ap.runAll();
+// For the landscape view: __tb.store.view = 'landscape'; await ap.calibrate(0, 'left');
 // It fakes DeviceOrientation events, so the whole tilt pipeline is exercised.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NEUTRAL_BETA = 35;
+// Neutral poses, 35 degrees toward the player: upright, sideways with the top edge
+// to the left (hold 90) and sideways with the top edge to the right (hold -90).
+export const POSES = {
+  portrait: { beta: 35, gamma: 0 },
+  left: { beta: 0, gamma: -35 },
+  right: { beta: 0, gamma: 35 },
+};
 // Shared on window so re-importing this module keeps driving the same fake sensor.
-const fake = (window.__apFake ||= { beta: NEUTRAL_BETA, gamma: 0 });
+const fake = (window.__apFake ||= { beta: 35, gamma: 0, neutral: POSES.portrait });
+
+export function setPose(name) {
+  fake.neutral = POSES[name];
+  fake.beta = fake.neutral.beta;
+  fake.gamma = fake.neutral.gamma;
+}
 
 function startSensor() {
   if (window.__apTimer) return;
@@ -14,10 +27,9 @@ function startSensor() {
   }, 16);
 }
 
-export async function calibrate(level = 0) {
+export async function calibrate(level = 0, pose = 'portrait') {
   startSensor();
-  fake.beta = NEUTRAL_BETA;
-  fake.gamma = 0;
+  setPose(pose);
   await window.__tb.beginFrom(level);
   const t0 = performance.now();
   while (window.__tb.state === 'hold' && performance.now() - t0 < 5000) await sleep(50);
@@ -81,13 +93,18 @@ export async function drive(waypoints, opts = {}) {
     const y = tb.camYaw;
     const ix = ax * Math.cos(y) - az * Math.sin(y);
     const iy = -ax * Math.sin(y) - az * Math.cos(y);
+    // Player-view tilt -> phone-frame tilt -> fake sensor angles.
+    const va = (tb.tilt.viewAngle * Math.PI) / 180;
+    const c = Math.round(Math.cos(va)), s = Math.round(Math.sin(va));
+    const px = ix * c + iy * s, py = -ix * s + iy * c;
     const ang = (u) => (Math.abs(u) > 0.01 ? Math.sign(u) * (1.2 + Math.abs(u) * 18.8) : 0);
-    fake.gamma = ang(ix) / Math.cos(NEUTRAL_BETA * Math.PI / 180);
-    fake.beta = NEUTRAL_BETA - ang(iy);
+    const n = fake.neutral;
+    fake.gamma = n.gamma + ang(px) / Math.cos((n.beta * Math.PI) / 180);
+    fake.beta = n.beta - ang(py);
     await sleep(16);
   }
-  fake.beta = NEUTRAL_BETA;
-  fake.gamma = 0;
+  fake.beta = fake.neutral.beta;
+  fake.gamma = fake.neutral.gamma;
   const p = tb.ball.pos;
   return {
     level: tb.levelIndex + 1,

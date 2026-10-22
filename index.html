@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="safe-probe"></div>
+  <div id="root">
   <canvas id="game"></canvas>
 
   <div id="hud" class="hidden">
@@ -35,59 +37,69 @@
 
   <!-- Title -->
   <div id="screen-title" class="screen">
-    <div class="panel">
-      <h1>Tilt <span>Ball</span></h1>
-      <p class="tag">Tilt your phone to roll the ball to the goal.</p>
-      <button id="btn-play" class="big-btn">Play</button>
-      <div class="sub-label">Levels</div>
-      <div id="level-grid"></div>
-      <div class="row">
-        <button id="btn-controls" class="small-btn">Controls: Tilt</button>
-        <button id="btn-tutorial" class="small-btn">How to play</button>
+    <div class="panel cols">
+      <div class="col">
+        <h1>Tilt <span>Ball</span></h1>
+        <p class="tag">Tilt your phone to roll the ball to the goal.</p>
+        <button id="btn-play" class="big-btn">Play</button>
+        <div class="row">
+          <button id="btn-view" class="small-btn">View: Portrait</button>
+          <button id="btn-controls" class="small-btn">Controls: Tilt</button>
+          <button id="btn-tutorial" class="small-btn">How to play</button>
+        </div>
+        <p id="secure-warning" class="warn hidden">
+          Tilt controls need this page to be opened over <b>https://</b>. On a computer, use the arrow keys.
+        </p>
       </div>
-      <p id="secure-warning" class="warn hidden">
-        Tilt controls need this page to be opened over <b>https://</b>. On a computer, use the arrow keys.
-      </p>
+      <div class="col">
+        <div class="sub-label">Levels</div>
+        <div id="level-grid"></div>
+      </div>
     </div>
   </div>
 
   <!-- Onboarding 1: hold steady and level -->
   <div id="screen-hold" class="screen hidden">
-    <div class="panel">
-      <h2>Get comfortable</h2>
-      <div class="phone-demo" aria-hidden="true">
-        <div class="phone"><div class="phone-screen"></div></div>
+    <div class="panel cols">
+      <div class="col">
+        <h2>Get comfortable</h2>
+        <div id="phone-demo" class="phone-demo" aria-hidden="true">
+          <div class="phone"><div class="phone-screen"></div></div>
+        </div>
+        <p id="hold-instr" class="instr"></p>
+        <p class="hint">This position becomes "neutral": the ball stays still while you hold it like this.</p>
       </div>
-      <p class="instr">
-        Hold the phone in <b>portrait</b> with both hands, screen facing up and tilted a little toward you —
-        like reading a message. Keep it <b>level</b> left-to-right and <b>hold still</b>.
-      </p>
-      <div id="bubble-level">
-        <div class="ring"></div>
-        <div id="bubble"></div>
-      </div>
-      <div id="hold-status">Waiting for the motion sensor…</div>
-      <div id="hold-progress"><div id="hold-progress-fill"></div></div>
-      <p class="hint">This position becomes "neutral": the ball stays still while you hold it like this.</p>
-      <div id="hold-nosensor" class="warn hidden">
-        No tilt data is arriving. Open the game from its <b>https://</b> link in Safari and allow motion access.
-        <button id="btn-use-touch" class="small-btn">Use touch controls instead</button>
+      <div class="col">
+        <div id="bubble-level">
+          <div class="ring"></div>
+          <div id="bubble"></div>
+        </div>
+        <div id="hold-status">Waiting for the motion sensor…</div>
+        <div id="hold-progress"><div id="hold-progress-fill"></div></div>
+        <div id="hold-nosensor" class="warn hidden">
+          No tilt data is arriving. Open the game from its <b>https://</b> link in Safari and allow motion access.
+          <button id="btn-use-touch" class="small-btn">Use touch controls instead</button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Onboarding 2: practice tilting -->
   <div id="screen-practice" class="screen hidden">
-    <div class="panel">
-      <h2>Try it out</h2>
-      <p id="practice-text" class="instr"></p>
-      <div id="arena">
-        <div id="ptarget"></div>
-        <div id="pdot"></div>
+    <div class="panel cols">
+      <div class="col">
+        <h2>Try it out</h2>
+        <p id="practice-text" class="instr"></p>
       </div>
-      <div id="practice-step"></div>
-      <p class="hint">Small tilts are enough. Return to your neutral position to slow down.</p>
-      <button id="btn-skip-practice" class="small-btn">Skip</button>
+      <div class="col">
+        <div id="arena">
+          <div id="ptarget"></div>
+          <div id="pdot"></div>
+        </div>
+        <div id="practice-step"></div>
+        <p class="hint">Small tilts are enough. Return to your neutral position to slow down.</p>
+        <button id="btn-skip-practice" class="small-btn">Skip</button>
+      </div>
     </div>
   </div>
 
@@ -129,9 +141,13 @@
       <button id="btn-complete-title" class="big-btn">Back to title</button>
     </div>
   </div>
+  </div>
 
-  <div id="rotate-warning">
-    <div>📱 Please turn your phone back to <b>portrait</b>.</div>
+  <div id="rotate-warning" class="hidden">
+    <div>
+      <p>📱 The game is set to <b>portrait</b>. Turn your phone upright,<br />or switch to landscape view.</p>
+      <button id="btn-rotate-landscape" class="big-btn">Play in landscape</button>
+    </div>
   </div>
 
   <div id="error-box" class="hidden"></div>

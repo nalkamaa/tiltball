@@ -19,10 +19,22 @@ const PRACTICE_TARGETS = [
   { x: 0, y: 0.72, text: 'Tilt the <b>top toward</b> you' },
 ];
 
+const HOLD_TEXT = {
+  portrait:
+    'Hold the phone <b>upright</b> with both hands, screen facing up and tilted a little toward you — ' +
+    'like reading a message. Keep it <b>level</b> left-to-right and <b>hold still</b>.' +
+    '<br><small>Tip: turn on <b>Rotation Lock</b> in Control Center so the screen never flips while you tilt.</small>',
+  landscape:
+    'Turn on <b>Rotation Lock</b> in Control Center, then hold the phone <b>sideways</b> with both hands, ' +
+    'like a game controller, screen tilted toward you. Keep it <b>level</b> and <b>hold still</b>.',
+};
+
 export class Onboarding {
-  constructor(tilt, sfx) {
+  // getView() returns the chosen view: 'portrait' or 'landscape'.
+  constructor(tilt, sfx, getView) {
     this.tilt = tilt;
     this.sfx = sfx;
+    this.getView = getView;
     this.mode = null;
   }
 
@@ -36,6 +48,10 @@ export class Onboarding {
     this.t = 0;
     this.progress = 0;
     this.history = [];
+    this.lastAngle = null;
+    const view = this.getView();
+    $('hold-instr').innerHTML = HOLD_TEXT[view];
+    $('phone-demo').classList.toggle('sideways', view === 'landscape');
     $('hold-nosensor').classList.add('hidden');
     $('hold-progress-fill').style.width = '0%';
   }
@@ -76,15 +92,31 @@ export class Onboarding {
     }
     $('hold-nosensor').classList.add('hidden');
 
-    const up = this.tilt.up;
+    const raw = this.tilt.up;
     const now = performance.now();
-    this.history.push({ t: now, u: up.slice() });
+    this.history.push({ t: now, u: raw.slice() });
     while (this.history.length && now - this.history[0].t > 800) this.history.shift();
 
+    const hold = this.tilt.hold;
+    let angle;
+    let orientMsg = null;
+    if (this.getView() === 'landscape') {
+      if (hold === 90 || hold === -90) angle = hold;
+      else if (hold === null) orientMsg = 'Tilt the screen a bit more toward you';
+      else orientMsg = 'Turn the phone sideways';
+      angle ??= this.lastAngle ?? 90;
+    } else {
+      if (hold === 90 || hold === -90) orientMsg = 'Hold the phone upright';
+      else if (hold === 180) orientMsg = 'Turn the phone the right way up';
+      angle = 0;
+    }
+    this.lastAngle = angle;
+
+    const up = this.tilt.upInView(angle);
     const roll = Math.asin(clamp(up[0], -1, 1)) * DEG;
     const pitch = Math.atan2(up[1], up[2]) * DEG;
     let maxDev = 0;
-    for (const h of this.history) maxDev = Math.max(maxDev, angleBetween(h.u, up));
+    for (const h of this.history) maxDev = Math.max(maxDev, angleBetween(h.u, raw));
     const covered = this.history.length > 5 && now - this.history[0].t > 600;
     const steady = covered && maxDev < STEADY_DEG;
     const rollOk = Math.abs(roll) < MAX_ROLL;
@@ -98,10 +130,11 @@ export class Onboarding {
     const by = clamp(pitchErr * BUBBLE_PX_PER_DEG, -BUBBLE_MAX_PX, BUBBLE_MAX_PX);
     bubble.style.transform = `translate(${bx}px, ${by}px)`;
 
-    const ok = steady && rollOk && pitchOk;
-    bubble.classList.toggle('ok', rollOk && pitchOk);
+    const ok = steady && rollOk && pitchOk && !orientMsg;
+    bubble.classList.toggle('ok', rollOk && pitchOk && !orientMsg);
 
-    if (pitch > PITCH_MAX) status.textContent = 'Hold the phone a bit flatter';
+    if (orientMsg) status.textContent = orientMsg;
+    else if (pitch > PITCH_MAX) status.textContent = 'Hold the phone a bit flatter';
     else if (pitch < PITCH_MIN) status.textContent = 'Lift the top edge up a little';
     else if (!rollOk) status.textContent = roll < 0 ? 'Raise the right side a little' : 'Raise the left side a little';
     else if (!steady) status.textContent = 'Hold still…';
@@ -115,6 +148,7 @@ export class Onboarding {
     if (this.progress >= 1) {
       const avg = [0, 0, 0];
       for (const h of this.history) { avg[0] += h.u[0]; avg[1] += h.u[1]; avg[2] += h.u[2]; }
+      this.tilt.viewAngle = angle;
       this.tilt.calibrate(avg);
       this.sfx.pop();
       status.textContent = 'Calibrated!';
